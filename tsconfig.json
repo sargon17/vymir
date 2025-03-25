@@ -1,0 +1,13 @@
+{
+  "extends": "@create-figma-plugin/tsconfig",
+  "compilerOptions": {
+    "paths": {
+      "react": ["./node_modules/preact/compat"],
+      "react-dom": ["./node_modules/preact/compat"],
+      "tailwindcss": ["./node_modules/tailwindcss"]
+    },
+    "skipLibCheck": true,
+    "typeRoots": ["node_modules/@figma", "node_modules/@types"]
+  },
+  "include": ["src/**/*.ts", "src/**/*.tsx"]
+}
