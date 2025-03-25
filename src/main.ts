@@ -3,47 +3,21 @@ import { loadFontsAsync, once, showUI, on, emit } from '@create-figma-plugin/uti
 import { InsertCodeHandler } from './types'
 
 export default function () {
-  // once<InsertCodeHandler>('INSERT_CODE', async function (code: string) {
-  //   const text = figma.createText()
-  //   await loadFontsAsync([text])
-  //   text.characters = code
-  //   figma.currentPage.selection = [text]
-  //   figma.viewport.scrollAndZoomIntoView([text])
-  //   figma.closePlugin()
-  // })
-
-
-  on('RUN', async function () {
-    console.log('run')
+  on('get-variables', async function () {
     const typography = await figma.getLocalTextStylesAsync();
-    console.log(typography)
     const jsonTypography = await getJsonTypography(typography)
-    console.log(jsonTypography)
     emit('display-json', JSON.stringify(jsonTypography, null, 2))
+  })
+
+  on('notify', function (message: string, options: { error?: boolean }) { 
+    figma.notify(message, {
+      timeout: 2000,
+      error: options.error,
+    })
   })
 
   showUI({ height: 600, width: 600 })
 }
-
-
-
-
-
-// figma.ui.onmessage = async (msg: unknown) => {
-//   if (msg === 'run') {
-//     const typography = await figma.getLocalTextStylesAsync();
-//     console.log(typography)
-
-//     const jsonTypography = await getJsonTypography(typography)
-//     console.log(jsonTypography)
-
-
-//     // console.log("run from plugin")
-//     // figma.ui.postMessage({ type: 'print', text: "Hello" })
-//     figma.ui.postMessage({ type: 'print', content: jsonTypography })
-//   }
-//   // console.log("run after")
-// }
 
 // Add type definitions for nested typography structure
 interface Spacing {
