@@ -6,7 +6,7 @@ import {
   render,
   VerticalSpace
 } from '@create-figma-plugin/ui'
-import { emit } from '@create-figma-plugin/utilities'
+import { emit, on } from '@create-figma-plugin/utilities'
 import { h, RefObject } from 'preact'
 import { useCallback, useEffect, useRef, useState } from 'preact/hooks'
 
@@ -16,14 +16,21 @@ import { InsertCodeHandler } from './types'
 
 
 function Plugin() {
+  const [json, setJson] = useState('')
   const containerElementRef : RefObject<HTMLDivElement> = useRef(null)
   const handleInsertCodeButtonClick = useCallback(
     function () {
-      console.log('insert code')
+      emit('RUN')
       // emit<InsertCodeHandler>('INSERT_CODE', 'code')
     },
     []
   )
+
+  useEffect(function () {
+    on('display-json', function (json) {
+      setJson(json)
+    })
+  }, [])
   // Patch to make `react-simple-code-editor` compatible with Preact
   // useEffect(function () {
   //   const containerElement = containerElementRef.current
@@ -46,19 +53,23 @@ function Plugin() {
 
 
   return (
-    <Container space="medium">
-      <VerticalSpace space="small" />
-      <div ref={containerElementRef}>
-      </div>
-      <div class="bg-red-400 w-full h-10">
-        this should be a red box
+      <div class="flex flex-col h-full p-4">
+      <div class="bg-stone-100 dark:bg-stone-700 rounded-lg p-2 w-full h-full overflow-auto ">
+        {json ? (
+          <pre>
+            {json}
+          </pre>
+        ) : (
+          <div class="flex flex-col h-full w-full justify-center items-center">
+            <p class="text-stone-500 dark:text-stone-400">No JSON data</p>
+          </div>
+        )}
       </div>
       <VerticalSpace space="large" />
       <Button fullWidth onClick={handleInsertCodeButtonClick}>
         Run
       </Button>
-      <VerticalSpace space="small" />
-    </Container>
+      </div>
   )
 }
 
