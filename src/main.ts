@@ -1,4 +1,10 @@
-import { loadFontsAsync, once, showUI, on, emit } from '@create-figma-plugin/utilities'
+import { loadFontsAsync, 
+  once,
+  showUI,
+  on,
+  emit,
+  convertRgbColorToHexColor
+ } from '@create-figma-plugin/utilities'
 
 import { InsertCodeHandler } from './types'
 
@@ -6,7 +12,16 @@ export default function () {
   on('get-variables', async function () {
     const typography = await figma.getLocalTextStylesAsync();
     const jsonTypography = await getJsonTypography(typography)
-    emit('display-json', JSON.stringify(jsonTypography, null, 2))
+
+    const collections = await figma.variables.getLocalVariableCollectionsAsync()
+    const jsonVaraibles = await getJsonVariables(collections)
+
+    const json = {
+      ...jsonVaraibles,
+      typography: jsonTypography,
+    }
+
+    emit('display-json', JSON.stringify(json, null, 2))
   })
 
   on('notify', function (message: string, options: { error?: boolean }) { 
@@ -17,6 +32,82 @@ export default function () {
   })
 
   showUI({ height: 600, width: 600 })
+}
+
+const colorHasTransparency = (color: RGBA): boolean => {
+  return color.a !== undefined && color.a !== 1
+}
+
+
+const extractCollectionVariables = async (collection: VariableCollection, mode: { modeId: string, name: string }) => {
+  const result: any = {};
+
+  await Promise.all(
+    collection.variableIds.map(async (variableId) => {
+
+      const variable = await figma.variables.getVariableByIdAsync(variableId);
+
+      const pathArray = variable?.name.split('/') || [];
+      let ref = result;
+
+      let variableValue: any = variable?.valuesByMode[mode.modeId]
+
+      if (variableValue.type === "VARIABLE_ALIAS") {
+        let v = await figma.variables.getVariableByIdAsync(variableValue.id)
+        const collection = await figma.variables.getVariableCollectionByIdAsync(v?.variableCollectionId || '')
+        console.log(v, v?.valuesByMode, mode.modeId, collection)
+        variableValue = v?.valuesByMode[collection?.modes[0].modeId || '']
+      }
+
+      if (variable?.resolvedType === "COLOR") {
+        if (colorHasTransparency(variableValue)) {
+          variableValue = `rgba(${Math.round(variableValue.r * 255)}, ${Math.round(variableValue.g * 255)}, ${Math.round(variableValue.b * 255)}, ${variableValue.a?.toFixed(3)})`
+        } else {
+          variableValue = `#${convertRgbColorToHexColor(variableValue as RGB)}`
+        }
+      }
+
+      
+      if (variable?.resolvedType === "FLOAT" && variableValue.type !== "VARIABLE_ALIAS") {
+        variableValue = `${variableValue}px`
+      }
+
+
+      pathArray.forEach((path, index) => {
+
+        const formattedPath = path.split(' ').join('-').toLowerCase()
+
+        if (index === pathArray.length - 1) {
+          ref[formattedPath] = { "value": variableValue };
+        } else {
+          ref[formattedPath] = ref[formattedPath] || {};
+          ref = ref[formattedPath];
+        }
+      });
+    })
+  );
+
+  return result
+}
+
+const getJsonVariables = async (collections: VariableCollection[]): Promise<Record<string, any>> => {
+  let result: Record<string, any> = {}
+  await Promise.all(collections.map(async (collection) => {
+    const modes = collection.modes
+    let variables: any = {}
+
+    if (modes.length > 1) {
+      for (const mode of modes) {
+        variables[mode.name.toLowerCase()] = await extractCollectionVariables(collection, mode)
+      }
+    } else {
+      variables = await extractCollectionVariables(collection, modes[0])
+    }
+    
+    result[collection.name.toLowerCase()] = variables
+  }))
+
+  return result
 }
 
 // Add type definitions for nested typography structure
