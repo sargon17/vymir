@@ -82,6 +82,18 @@ function buildCanvasTree(
   return node
 }
 
+// Helper to get the open path keys (from root to the first expanded leaf)
+function getOpenPathKeys(node: CanvasTreeNode | undefined): Set<string> {
+  const path = new Set<string>()
+  let current: CanvasTreeNode | undefined = node
+  while (current) {
+    path.add(current.key)
+    const next = current.children.find(child => child.expanded)
+    current = next
+  }
+  return path
+}
+
 function CanvasTreeView({ data }: { data: any }) {
   let parsed: any
   try {
@@ -92,13 +104,15 @@ function CanvasTreeView({ data }: { data: any }) {
   const canvasRef = useRef<HTMLCanvasElement>(null)
   const [expandedMap, setExpandedMap] = useState<Record<string, boolean>>({ root: true })
   // Build tree structure and layout
-  const [nodes, maxWidth, maxHeight] = useMemo(() => {
+  const [nodes, maxWidth, maxHeight, rootNode] = useMemo(() => {
     const nodeList: CanvasTreeNode[] = []
     const yOffset = { value: 16 }
     const maxWidth = { value: 0 }
-    buildCanvasTree(parsed, 'root', null, 0, expandedMap, yOffset, nodeList, maxWidth)
-    return [nodeList, maxWidth.value, yOffset.value + 16]
+    const root = buildCanvasTree(parsed, 'root', null, 0, expandedMap, yOffset, nodeList, maxWidth)
+    return [nodeList, maxWidth.value, yOffset.value + 16, root]
   }, [parsed, expandedMap])
+
+  const openPathKeys = useMemo(() => getOpenPathKeys(rootNode), [rootNode])
 
   // Draw tree
   useEffect(() => {
@@ -120,7 +134,8 @@ function CanvasTreeView({ data }: { data: any }) {
     // Draw connections
     for (const node of nodes) {
       for (const child of node.children) {
-        ctx.strokeStyle = '#18181b'
+        // Highlight line if both parent and child are on the open path
+        ctx.strokeStyle = openPathKeys.has(node.key) && openPathKeys.has(child.key) ? '#7f1d1d' : '#18181b'
         ctx.lineWidth = 2
         ctx.beginPath()
         ctx.moveTo(node.x + node.width, node.y + node.height / 2)
@@ -138,7 +153,7 @@ function CanvasTreeView({ data }: { data: any }) {
     // Draw nodes
     for (const node of nodes) {
       // Node box
-      ctx.fillStyle = '#18181b'
+      ctx.fillStyle = openPathKeys.has(node.key) ? '#7f1d1d' : '#18181b'
       ctx.strokeStyle = '#27272a'
       ctx.lineWidth = 1
       ctx.beginPath()
@@ -148,18 +163,18 @@ function CanvasTreeView({ data }: { data: any }) {
       // Expand/collapse icon
       const isObject = node.value && typeof node.value === 'object' && !Array.isArray(node.value)
       if (isObject) {
-        ctx.fillStyle = '#a3a3a3'
+        ctx.fillStyle = '#27272a'
         ctx.beginPath()
         ctx.arc(node.x + 14, node.y + node.height / 2, 8, 0, 2 * Math.PI)
         ctx.fill()
-        ctx.fillStyle = '#fff'
+        ctx.fillStyle = '#d4d4d8'
         ctx.font = 'bold 14px monospace'
         ctx.textAlign = 'center'
         ctx.fillText(node.expanded ? '-' : '+', node.x + 14, node.y + node.height / 2 + 1)
         ctx.textAlign = 'left'
       }
       // Label
-      ctx.fillStyle = '#f4f4f5'
+      ctx.fillStyle = '#d4d4d8'
       ctx.font = '14px monospace'
       ctx.fillText(
         isObject ? node.label : `${node.label}: ${String(node.value)}`,
@@ -167,7 +182,7 @@ function CanvasTreeView({ data }: { data: any }) {
         node.y + node.height / 2,
       )
     }
-  }, [nodes, maxWidth, maxHeight])
+  }, [nodes, maxWidth, maxHeight, openPathKeys])
 
   // Handle click for expand/collapse
   const handleCanvasClick = (e: MouseEvent) => {
