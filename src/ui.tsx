@@ -7,23 +7,18 @@ import {
 } from '@create-figma-plugin/ui'
 import { emit, on } from '@create-figma-plugin/utilities'
 import { h } from 'preact'
-import { useCallback, useEffect, useState } from 'preact/hooks'
+import { useCallback, useEffect, useState, useRef, useMemo, useLayoutEffect } from 'preact/hooks'
 
 import '!./output.css'
-
-
+import CanvasTreeView from './CanvasTreeView'
 
 function Plugin() {
   const [json, setJson] = useState('')
   const [copyStatus, setCopyStatus] = useState<'idle' | 'success' | 'error'>('idle')
-  const handleInsertCodeButtonClick = useCallback(
-    function () {
-      emit('get-variables')
-    },
-    []
-  )
-
-
+  const [view, setView] = useState<'json' | 'tree' | 'jsoncrack'>('tree')
+  const handleInsertCodeButtonClick = useCallback(function () {
+    emit('get-variables')
+  }, [])
 
   const copyToClipboard = (text: string) => {
     let textarea = document.createElement('textarea')
@@ -63,9 +58,32 @@ function Plugin() {
 
   return (
     <div class='flex flex-col h-full p-4 gap-4'>
+      {/* Switcher */}
+      <div class='flex gap-2 mb-2'>
+        <button
+          class={`px-3 py-1 rounded ${
+            view === 'json' ? 'bg-zinc-300 dark:bg-zinc-700 font-bold' : 'bg-zinc-100 dark:bg-zinc-800'
+          }`}
+          onClick={() => setView('json')}
+        >
+          JSON
+        </button>
+        <button
+          class={`px-3 py-1 rounded ${
+            view === 'tree' ? 'bg-zinc-300 dark:bg-zinc-700 font-bold' : 'bg-zinc-100 dark:bg-zinc-800'
+          }`}
+          onClick={() => setView('tree')}
+        >
+          Tree
+        </button>
+      </div>
       <div class='bg-zinc-100 dark:bg-zinc-800 rounded-lg p-2 w-full h-full overflow-auto [&::-webkit-scrollbar]:hidden'>
         {json ? (
-          <pre>{json}</pre>
+          view === 'json' ? (
+            <pre>{json}</pre>
+          ) : (
+            <CanvasTreeView data={json} />
+          )
         ) : (
           <div class='flex flex-col h-full w-full justify-center items-center'>
             <p class='text-zinc-500 dark:text-zinc-400'>No JSON data</p>

@@ -6,7 +6,6 @@ import { loadFontsAsync,
   convertRgbColorToHexColor
  } from '@create-figma-plugin/utilities'
 
-import { InsertCodeHandler } from './types'
 import { getTokenType } from './utils/getTokenType'
 import { formatToken, formatReference, formatTypographyToken } from './utils/tokenFormat'
 
@@ -33,7 +32,7 @@ export default function () {
     })
   })
 
-  showUI({ height: 600, width: 600 })
+  showUI({ height: 800, width: 1000 })
 }
 
 const colorHasTransparency = (color: RGBA): boolean => {
