@@ -1,5 +1,5 @@
 import { h } from 'preact'
-import { useRef, useEffect, useState, useMemo } from 'preact/hooks'
+import { useRef, useEffect, useState, useMemo, useCallback } from 'preact/hooks'
 
 type CanvasTreeNode = {
   key: string
@@ -88,7 +88,7 @@ function getOpenPathKeys(node: CanvasTreeNode | undefined): Set<string> {
   let current: CanvasTreeNode | undefined = node
   while (current) {
     path.add(current.key)
-    const next = current.children.find(child => child.expanded)
+    const next = current.children.find((child) => child.expanded)
     current = next
   }
   return path
@@ -114,50 +114,173 @@ function CanvasTreeView({ data }: { data: any }) {
 
   const openPathKeys = useMemo(() => getOpenPathKeys(rootNode), [rootNode])
 
-  // Draw tree
+  // --- Animation state ---
+  // Map of node.key -> animated y position
+  const [yPositions, setYPositions] = useState<Record<string, number>>({})
+  const yPositionsRef = useRef<Record<string, number>>({})
+  const [opacities, setOpacities] = useState<Record<string, number>>({})
+  const opacitiesRef = useRef<Record<string, number>>({})
+  const [renderedKeys, setRenderedKeys] = useState<Set<string>>(new Set())
+  const animationRef = useRef<number | null>(null)
+
+  // Easing function
+  function easeInOutCubic(t: number) {
+    return t < 0.5 ? 4 * t * t * t : 1 - Math.pow(-2 * t + 2, 3) / 2
+  }
+
+  // Animate y positions and opacities to target
+  const animateYPositions = useCallback(
+    (
+      targetY: Record<string, number>,
+      targetOpacities: Record<string, number>,
+      nextRenderedKeys: Set<string>,
+    ) => {
+      if (animationRef.current) cancelAnimationFrame(animationRef.current)
+      const duration = 20
+      const start = performance.now()
+      const initialY = { ...yPositionsRef.current }
+      const initialO = { ...opacitiesRef.current }
+      // For new nodes, animate from parent's y and opacity 0
+      for (const k in targetY) {
+        if (!(k in initialY)) {
+          const parentKey = k.lastIndexOf('.') !== -1 ? k.slice(0, k.lastIndexOf('.')) : null
+          if (parentKey && parentKey in targetY) {
+            initialY[k] = targetY[parentKey]
+          } else {
+            initialY[k] = targetY[k]
+          }
+        }
+        if (!(k in initialO)) {
+          initialO[k] = 0
+        }
+      }
+      // For disappearing nodes, keep their last y and opacity 1
+      for (const k in initialY) {
+        if (!(k in targetY)) {
+          targetY[k] = initialY[k]
+          targetOpacities[k] = 0
+        }
+      }
+      yPositionsRef.current = initialY
+      opacitiesRef.current = initialO
+      setRenderedKeys(new Set([...Object.keys(targetY)]))
+      function step(now: number) {
+        const t = Math.min(1, (now - start) / duration)
+        const nextY: Record<string, number> = {}
+        const nextO: Record<string, number> = {}
+        let changed = false
+        for (const k in targetY) {
+          // Animate y
+          const fromY = initialY[k]
+          const toY = targetY[k]
+          const y = fromY + (toY - fromY) * easeInOutCubic(t)
+          nextY[k] = y
+          if (Math.abs(y - toY) > 0.5) changed = true
+          // Animate opacity
+          const fromO = initialO[k] ?? 1
+          const toO = targetOpacities[k] ?? 1
+          const o = fromO + (toO - fromO) * easeInOutCubic(t)
+          nextO[k] = o
+          if (Math.abs(o - toO) > 0.01) changed = true
+        }
+        yPositionsRef.current = nextY
+        opacitiesRef.current = nextO
+        setYPositions(nextY)
+        setOpacities(nextO)
+        if (changed && t < 1) {
+          animationRef.current = requestAnimationFrame(step)
+        } else {
+          setYPositions(targetY)
+          setOpacities(targetOpacities)
+          yPositionsRef.current = { ...targetY }
+          opacitiesRef.current = { ...targetOpacities }
+          setRenderedKeys(nextRenderedKeys)
+          animationRef.current = null
+        }
+      }
+      animationRef.current = requestAnimationFrame(step)
+    },
+    [],
+  )
+
+  // When nodes change, animate y positions and opacities
+  useEffect(() => {
+    const targetY: Record<string, number> = {}
+    const targetOpacities: Record<string, number> = {}
+    for (const node of nodes) {
+      targetY[node.key] = node.y
+      targetOpacities[node.key] = 1
+    }
+    // For disappearing nodes, fade out
+    for (const k of renderedKeys) {
+      if (!(k in targetY)) {
+        targetY[k] = yPositionsRef.current[k] ?? 0
+        targetOpacities[k] = 0
+      }
+    }
+    const nextRenderedKeys = new Set(
+      [...Object.keys(targetY)].filter(
+        (k) => targetOpacities[k] > 0 || (opacitiesRef.current[k] ?? 1) > 0.01,
+      ),
+    )
+    animateYPositions(targetY, targetOpacities, nextRenderedKeys)
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [nodes])
+
+  // Draw tree (use animated y and opacity)
   useEffect(() => {
     const canvas = canvasRef.current
     if (!canvas) return
     const dpr = window.devicePixelRatio || 1
-    // Set the actual pixel size
     canvas.width = maxWidth * dpr
     canvas.height = maxHeight * dpr
-    // Set the CSS size
     canvas.style.width = `${maxWidth}px`
     canvas.style.height = `${maxHeight}px`
     const ctx = canvas.getContext('2d')
     if (!ctx) return
-    ctx.setTransform(dpr, 0, 0, dpr, 0, 0) // Scale all drawing by dpr
+    ctx.setTransform(dpr, 0, 0, dpr, 0, 0)
     ctx.clearRect(0, 0, maxWidth, maxHeight)
     ctx.font = '14px monospace'
     ctx.textBaseline = 'middle'
     // Draw connections
     for (const node of nodes) {
+      if (!renderedKeys.has(node.key)) continue
+      const nodeY = yPositions[node.key] ?? node.y
+      const nodeO = opacities[node.key] ?? 1
       for (const child of node.children) {
-        // Highlight line if both parent and child are on the open path
+        if (!renderedKeys.has(child.key)) continue
+        const childY = yPositions[child.key] ?? child.y
+        const childO = opacities[child.key] ?? 1
+        ctx.save()
+        ctx.globalAlpha = Math.min(nodeO, childO)
         ctx.strokeStyle = openPathKeys.has(node.key) && openPathKeys.has(child.key) ? '#7f1d1d' : '#18181b'
         ctx.lineWidth = 2
         ctx.beginPath()
-        ctx.moveTo(node.x + node.width, node.y + node.height / 2)
+        ctx.moveTo(node.x + node.width, nodeY + node.height / 2)
         ctx.bezierCurveTo(
           node.x + node.width + 20,
-          node.y + node.height / 2,
+          nodeY + node.height / 2,
           child.x - 20,
-          child.y + child.height / 2,
+          childY + child.height / 2,
           child.x,
-          child.y + child.height / 2,
+          childY + child.height / 2,
         )
         ctx.stroke()
+        ctx.restore()
       }
     }
     // Draw nodes
     for (const node of nodes) {
-      // Node box
+      if (!renderedKeys.has(node.key)) continue
+      const nodeY = yPositions[node.key] ?? node.y
+      const nodeO = opacities[node.key] ?? 1
+      ctx.save()
+      ctx.globalAlpha = nodeO
       ctx.fillStyle = openPathKeys.has(node.key) ? '#7f1d1d' : '#18181b'
       ctx.strokeStyle = '#27272a'
       ctx.lineWidth = 1
       ctx.beginPath()
-      ctx.roundRect(node.x, node.y, node.width, node.height, 8)
+      ctx.roundRect(node.x, nodeY, node.width, node.height, 8)
       ctx.fill()
       ctx.stroke()
       // Expand/collapse icon
@@ -165,40 +288,40 @@ function CanvasTreeView({ data }: { data: any }) {
       if (isObject) {
         ctx.fillStyle = '#27272a'
         ctx.beginPath()
-        ctx.arc(node.x + 14, node.y + node.height / 2, 8, 0, 2 * Math.PI)
+        ctx.arc(node.x + 14, nodeY + node.height / 2, 8, 0, 2 * Math.PI)
         ctx.fill()
         ctx.fillStyle = '#d4d4d8'
         ctx.font = 'bold 14px monospace'
         ctx.textAlign = 'center'
-        ctx.fillText(node.expanded ? '-' : '+', node.x + 14, node.y + node.height / 2 + 1)
+        ctx.fillText(node.expanded ? '-' : '+', node.x + 14, nodeY + node.height / 2 + 1)
         ctx.textAlign = 'left'
       }
-      // Label
       ctx.fillStyle = '#d4d4d8'
       ctx.font = '14px monospace'
       ctx.fillText(
         isObject ? node.label : `${node.label}: ${String(node.value)}`,
         node.x + (isObject ? 30 : 10),
-        node.y + node.height / 2,
+        nodeY + node.height / 2,
       )
+      ctx.restore()
     }
-  }, [nodes, maxWidth, maxHeight, openPathKeys])
+  }, [nodes, maxWidth, maxHeight, openPathKeys, yPositions, opacities, renderedKeys])
 
-  // Handle click for expand/collapse
+  // Handle click for expand/collapse (use animated y)
   const handleCanvasClick = (e: MouseEvent) => {
     const rect = canvasRef.current?.getBoundingClientRect()
     if (!rect) return
     const x = e.clientX - rect.left
     const y = e.clientY - rect.top
-    // Find node under click
     for (const node of nodes) {
+      const nodeY = yPositions[node.key] ?? node.y
       const isObject = node.value && typeof node.value === 'object' && !Array.isArray(node.value)
       if (
         isObject &&
         x >= node.x + 6 &&
         x <= node.x + 22 &&
-        y >= node.y + node.height / 2 - 8 &&
-        y <= node.y + node.height / 2 + 8
+        y >= nodeY + node.height / 2 - 8 &&
+        y <= nodeY + node.height / 2 + 8
       ) {
         setExpandedMap((prev) => ({ ...prev, [node.key]: !node.expanded }))
         break
