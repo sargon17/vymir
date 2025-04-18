@@ -37,23 +37,21 @@ function Plugin() {
   const handleCopyToClipboardButtonClick = useCallback(
     function () {
       try {
-        copyToClipboard(json) 
+        copyToClipboard(json)
         emit('notify', 'Copied to clipboard', {
-          error: false
+          error: false,
         })
         setTimeout(() => setCopyStatus('idle'), 2000)
       } catch (error) {
         console.error('Failed to copy to clipboard:', error)
         emit('notify', 'Failed to copy to clipboard', {
-          error: true
+          error: true,
         })
         setTimeout(() => setCopyStatus('idle'), 2000)
-
       }
     },
-    [json]
+    [json],
   )
-
 
   on('display-json', function (json) {
     setJson(json)
@@ -64,32 +62,28 @@ function Plugin() {
   }, [])
 
   return (
-      <div class="flex flex-col h-full p-4 gap-4">
-      <div class="bg-stone-100 dark:bg-stone-700 rounded-lg p-2 w-full h-full overflow-auto ">
+    <div class='flex flex-col h-full p-4 gap-4'>
+      <div class='bg-zinc-100 dark:bg-zinc-800 rounded-lg p-2 w-full h-full overflow-auto [&::-webkit-scrollbar]:hidden'>
         {json ? (
-          <pre>
-            {json}
-          </pre>
+          <pre>{json}</pre>
         ) : (
-          <div class="flex flex-col h-full w-full justify-center items-center">
-            <p class="text-stone-500 dark:text-stone-400">No JSON data</p>
+          <div class='flex flex-col h-full w-full justify-center items-center'>
+            <p class='text-zinc-500 dark:text-zinc-400'>No JSON data</p>
           </div>
         )}
       </div>
-      <div class="flex gap-2 justify-end">
-      {json && (
-        <Button
-        secondary
-        onClick={handleCopyToClipboardButtonClick}
-        >
-          Copy to Clipboard
-        </Button>
-      )}
-      <Button onClick={handleInsertCodeButtonClick}>
-        Generate JSON
-      </Button>
+      <div class='flex gap-2 justify-end'>
+        {json && (
+          <Button
+            secondary
+            onClick={handleCopyToClipboardButtonClick}
+          >
+            Copy to Clipboard
+          </Button>
+        )}
+        <Button onClick={handleInsertCodeButtonClick}>Generate JSON</Button>
       </div>
-      </div>
+    </div>
   )
 }
 
